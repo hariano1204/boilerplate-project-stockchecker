@@ -3,15 +3,14 @@
 const axios = require('axios');
 const mongoose = require('mongoose');
 
-// Esquema para las acciones
+// Modelo para stocks
 const stockSchema = new mongoose.Schema({
   symbol: { type: String, required: true, uppercase: true, unique: true },
   ips: { type: [String], default: [] }
 });
-
 const Stock = mongoose.model('Stock', stockSchema);
 
-// Función para obtener precio desde el proxy FCC
+// Función para obtener precio desde FCC proxy
 async function getStockPrice(symbol) {
   const url = `https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/${symbol}/quote`;
   const res = await axios.get(url);
@@ -20,7 +19,7 @@ async function getStockPrice(symbol) {
 
 module.exports = function (app) {
 
-  app.get('/api/stock-prices', async function (req, res) {
+  app.get('/api/stock-prices', async (req, res) => {
     try {
       let { stock, like } = req.query;
       const ip = req.ip || req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress;
@@ -28,9 +27,10 @@ module.exports = function (app) {
 
       if (!stock) return res.status(400).json({ error: 'Stock requerido' });
 
-      // Caso: dos acciones
+      // Caso: múltiples acciones
       if (Array.isArray(stock)) {
         stock = stock.map(s => s.toUpperCase()).slice(0, 2);
+
         const prices = await Promise.all(stock.map(s => getStockPrice(s)));
 
         const docs = await Promise.all(prices.map(async p => {
@@ -40,18 +40,18 @@ module.exports = function (app) {
             d.ips.push(ip);
             await d.save();
           }
-          return { symbol: p.symbol, price: p.price, likes: d.ips.length };
+          return { stock: p.symbol, price: p.price, likes: d.ips.length };
         }));
 
         const relLikes = [
-          { stock: docs[0].symbol, price: docs[0].price, rel_likes: docs[0].likes - docs[1].likes },
-          { stock: docs[1].symbol, price: docs[1].price, rel_likes: docs[1].likes - docs[0].likes }
+          { stock: docs[0].stock, price: docs[0].price, rel_likes: docs[0].likes - docs[1].likes },
+          { stock: docs[1].stock, price: docs[1].price, rel_likes: docs[1].likes - docs[0].likes }
         ];
 
         return res.json({ stockData: relLikes });
       }
 
-      // Caso: una sola acción
+      // Caso: acción única
       stock = stock.toUpperCase();
       const { symbol, price } = await getStockPrice(stock);
 
@@ -62,12 +62,13 @@ module.exports = function (app) {
         await doc.save();
       }
 
-      return res.json({ stockData: { stock: symbol, price, likes: doc.ips.length } });
+      return res.json({
+        stockData: { stock: symbol, price, likes: doc.ips.length }
+      });
 
     } catch (err) {
-      console.error(err);
+      console.error(err.message);
       res.status(500).json({ error: 'Error en el servidor' });
     }
   });
-
 };
