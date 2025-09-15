@@ -54,16 +54,18 @@ mongoose
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`🚀 Servidor escuchando en puerto ${port}`);
- if (process.env.NODE_ENV === 'test' || process.env.RUN_FCC_TESTS === 'true') {
-  console.log('Running Tests...');
-  setTimeout(() => {
-    try {
-      runner.run();
-    } catch (e) {
-      console.error('Tests inválidos:', e);
-    }
-  }, 3500);
-}
 
+  // ⚡ Forzar ejecución del runner también con RUN_FCC_TESTS
+  if (process.env.NODE_ENV === 'test' || process.env.RUN_FCC_TESTS === 'true') {
+    console.log('Running Tests...');
+    setTimeout(() => {
+      try {
+        runner.run();
+      } catch (e) {
+        console.error('Tests inválidos:', e);
+      }
+    }, 3500);
+  }
+});
 
 module.exports = app;
