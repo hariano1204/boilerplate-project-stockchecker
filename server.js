@@ -1,21 +1,25 @@
 'use strict';
 
+require('dotenv').config();
 const express = require('express');
-const bodyParser = require('body-parser');
 const cors = require('cors');
 const helmet = require('helmet');
-require('dotenv').config();
+const mongoose = require('mongoose');
 
-const apiRoutes = require('./routes/api.js');
 const fccTestingRoutes = require('./routes/fcctesting.js');
+const apiRoutes = require('./routes/api.js');
 const runner = require('./test-runner');
 
 const app = express();
 
-// ✅ Helmet CSP exacto como FCC espera
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// ✅ Helmet CSP (prueba #2)
 app.use(
   helmet.contentSecurityPolicy({
-    useDefaults: false,
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
@@ -24,43 +28,39 @@ app.use(
   })
 );
 
-// Middlewares adicionales
-app.use(cors({ origin: '*' }));
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-
-// Archivos estáticos
+// Servir archivos estáticos y vista inicial
 app.use('/public', express.static(process.cwd() + '/public'));
+app.route('/').get((req, res) => {
+  res.sendFile(process.cwd() + '/views/index.html');
+});
 
-// Rutas
-app.route('/')
-  .get(function (req, res) {
-    res.sendFile(process.cwd() + '/views/index.html');
-  });
-
+// Rutas FCC
 fccTestingRoutes(app);
+
+// Rutas API
 apiRoutes(app);
 
 // 404 handler
-app.use(function (req, res) {
-  res.status(404)
-    .type('text')
-    .send('Not Found');
-});
+app.use((req, res) => res.status(404).type('text').send('Not Found'));
 
-// Iniciar servidor
+// Conectar a MongoDB
+const MONGODB_URI = process.env.DB;
+mongoose
+  .connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('✅ MongoDB conectado'))
+  .catch((err) => console.error('❌ Error MongoDB:', err.message));
+
+// Servidor
 const port = process.env.PORT || 3000;
-app.listen(port, function () {
-  console.log("Your app is listening on port " + port);
-
+app.listen(port, () => {
+  console.log(`🚀 Servidor escuchando en puerto ${port}`);
   if (process.env.NODE_ENV === 'test') {
     console.log('Running Tests...');
-    setTimeout(function () {
+    setTimeout(() => {
       try {
         runner.run();
       } catch (e) {
-        console.log('Tests are not valid:');
-        console.error(e);
+        console.error('Tests invalidos:', e);
       }
     }, 3500);
   }
