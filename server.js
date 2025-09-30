@@ -13,18 +13,19 @@ const app = express();
 app.use(cors({ origin: '*' }));
 
 // Helmet CSP (seguridad mínima requerida por FCC)
-app.use(
-  helmet.contentSecurityPolicy({
-    useDefaults: true,
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'"],
-      imgSrc: ["'self'"],
-      objectSrc: ["'none'"]
+aapp.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'"]
+      }
     }
   })
 );
+
 
 // Deshabilitar X-Powered-By
 app.disable('x-powered-by');
