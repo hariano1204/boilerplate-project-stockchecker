@@ -52,4 +52,3 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 module.exports = app; // necesario para que funcionen los tests
-
