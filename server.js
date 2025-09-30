@@ -1,71 +1,56 @@
 'use strict';
 
-require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
 const helmet = require('helmet');
-const mongoose = require('mongoose');
+const path = require('path');
+const cors = require('cors');
 
-const fccTestingRoutes = require('./routes/fcctesting.js');
-const apiRoutes = require('./routes/api.js');
-const runner = require('./test-runner');
+const apiRoutes = require('./routes/api.js'); // Aquí conectas tus endpoints reales
 
 const app = express();
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// CORS habilitado para que FCC pueda hacer las pruebas
+app.use(cors({ origin: '*' }));
 
-// ✅ Helmet CSP (prueba #2)
+// Helmet CSP (seguridad mínima requerida por FCC)
 app.use(
   helmet.contentSecurityPolicy({
+    useDefaults: true,
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
       styleSrc: ["'self'"],
-    },
+      imgSrc: ["'self'"],
+      objectSrc: ["'none'"]
+    }
   })
 );
 
-// Servir archivos estáticos y vista inicial
-app.use('/public', express.static(process.cwd() + '/public'));
-app.route('/').get((req, res) => {
-  res.sendFile(process.cwd() + '/views/index.html');
-});
+// Deshabilitar X-Powered-By
+app.disable('x-powered-by');
 
-// Rutas FCC
-fccTestingRoutes(app);
+// Archivos estáticos
+app.use('/public', express.static(path.join(process.cwd(), 'public')));
+
+// Ruta raíz (sirve el index.html de la carpeta views)
+app.get('/', (req, res) => {
+  res.sendFile(path.join(process.cwd(), 'views', 'index.html'));
+});
 
 // Rutas API
-apiRoutes(app);
+app.use('/api', apiRoutes);
 
 // 404 handler
-app.use((req, res) => res.status(404).type('text').send('Not Found'));
-
-// Conectar a MongoDB
-const MONGODB_URI = process.env.DB;
-mongoose
-  .connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log('✅ MongoDB conectado'))
-  .catch((err) => console.error('❌ Error MongoDB:', err.message));
-
-// Servidor
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`🚀 Servidor escuchando en puerto ${port}`);
-
-  // ⚡ Forzar ejecución del runner también con RUN_FCC_TESTS
-  if (process.env.NODE_ENV === 'test' || process.env.RUN_FCC_TESTS === 'true') {
-    console.log('Running Tests...');
-    setTimeout(() => {
-      try {
-        runner.run();
-      } catch (e) {
-        console.error('Tests inválidos:', e);
-      }
-    }, 3500);
-  }
+app.use((req, res) => {
+  res.status(404).type('text').send('Not Found');
 });
 
-module.exports = app;
+// Arranque del servidor
+const port = process.env.PORT || 3000;
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(port, () => {
+    console.log(`🚀 Servidor escuchando en puerto ${port}`);
+  });
+}
+
+module.exports = app; // Necesario para los tests
