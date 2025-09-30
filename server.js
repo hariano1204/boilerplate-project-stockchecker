@@ -13,7 +13,7 @@ const app = express();
 app.use(cors({ origin: '*' }));
 
 // Helmet CSP (seguridad mínima requerida por FCC)
-aapp.use(
+app.use(
   helmet({
     contentSecurityPolicy: {
       useDefaults: false,
