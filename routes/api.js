@@ -1,102 +1,82 @@
 'use strict';
 
+const express = require('express');
 const axios = require('axios');
-const mongoose = require('mongoose');
+const crypto = require('crypto');
 
-// Esquema de acciones
-const stockSchema = new mongoose.Schema({
-  symbol: { type: String, required: true, uppercase: true, unique: true },
-  ips: { type: [String], default: [] }
-});
-const Stock = mongoose.model('Stock', stockSchema);
+const router = express.Router();
 
-// Obtener precio desde el proxy FCC
-async function getStockPrice(symbol) {
+// Base de datos en memoria
+const db = new Map();
+
+// Anonimizar IP
+function anonIp(ip) {
+  if (!ip) return 'unknown';
+  const ipv4 = ip.match(/\d+\.\d+\.\d+\.\d+/)?.[0];
+  const masked = ipv4 ? ipv4.split('.').slice(0, 3).concat('0').join('.') : ip;
+  return crypto.createHash('sha256').update(masked).digest('hex');
+}
+
+// Obtener precio
+async function getStockData(symbol) {
   const url = `https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/${symbol}/quote`;
   const res = await axios.get(url);
-  return { symbol: res.data.symbol, price: Number(res.data.latestPrice) };
+  return { stock: res.data.symbol, price: Number(res.data.latestPrice) };
 }
 
-// Normalizar IP
-function normalizeIp(req) {
-  let ip =
-    req.headers['x-forwarded-for']?.split(',')[0] ||
-    req.ip ||
-    req.socket?.remoteAddress;
-
-  if (!ip) return 'unknown';
-  if (ip.includes('::ffff:')) ip = ip.split('::ffff:')[1];
-  if (ip === '::1') ip = '127.0.0.1';
-
-  return ip.trim();
+// Like
+function likeStock(symbol, ipHash) {
+  const key = symbol.toUpperCase();
+  if (!db.has(key)) db.set(key, { likes: 0, ips: new Set() });
+  const record = db.get(key);
+  if (!record.ips.has(ipHash)) {
+    record.ips.add(ipHash);
+    record.likes++;
+  }
+  return record.likes;
 }
 
-module.exports = function (app) {
-  // Asegura que Express confíe en el proxy
-  app.set('trust proxy', true);
+// Get likes
+function getLikes(symbol) {
+  const record = db.get(symbol.toUpperCase());
+  return record ? record.likes : 0;
+}
 
-  app.get('/api/stock-prices', async function (req, res) {
-    try {
-      let { stock, like } = req.query;
+// Ruta principal
+router.get('/stock-prices', async (req, res) => {
+  try {
+    let { stock, like } = req.query;
+    const likeFlag = String(like || '').toLowerCase() === 'true';
+    const ipHash = likeFlag ? anonIp(req.ip || req.headers['x-forwarded-for']) : null;
 
-      const ip = normalizeIp(req);
-      const likeFlag = like === 'true' || like === '1';
+    if (!stock) return res.json({ stockData: { error: 'missing stock' } });
 
-      if (!stock) return res.status(400).json({ error: 'Stock requerido' });
-
-      // Caso: dos acciones
-      if (Array.isArray(stock)) {
-        const symbols = stock.map(s => s.toUpperCase()).slice(0, 2);
-        const prices = await Promise.all(symbols.map(s => getStockPrice(s)));
-
-        const docs = await Promise.all(
-          symbols.map(async s => {
-            let d = await Stock.findOne({ symbol: s });
-            if (!d) d = new Stock({ symbol: s, ips: [] });
-            if (likeFlag && ip !== 'unknown' && !d.ips.includes(ip)) {
-              d.ips.push(ip);
-              await d.save();
-            }
-            return { symbol: s, likes: d.ips.length || 0 };
-          })
-        );
-
-        const stockData = symbols.map((s, i) => {
-          const price = prices[i].price;
-          const likesA = docs[0].likes;
-          const likesB = docs[1].likes;
-          const rel_likes =
-            docs[i].symbol === docs[0].symbol
-              ? likesA - likesB
-              : likesB - likesA;
-
-          return { stock: s, price, rel_likes };
-        });
-
-        return res.json({ stockData });
+    if (Array.isArray(stock) && stock.length === 2) {
+      const [s1, s2] = stock.map(s => s.toUpperCase());
+      const [d1, d2] = await Promise.all([getStockData(s1), getStockData(s2)]);
+      if (likeFlag) {
+        likeStock(s1, ipHash);
+        likeStock(s2, ipHash);
       }
-
-      // Caso: una sola acción
-      const symbol = stock.toUpperCase();
-      const { price } = await getStockPrice(symbol);
-
-      let doc = await Stock.findOne({ symbol });
-      if (!doc) doc = new Stock({ symbol, ips: [] });
-      if (likeFlag && ip !== 'unknown' && !doc.ips.includes(ip)) {
-        doc.ips.push(ip);
-        await doc.save();
-      }
-
+      const l1 = getLikes(s1);
+      const l2 = getLikes(s2);
       return res.json({
-        stockData: {
-          stock: symbol,
-          price,
-          likes: doc.ips.length || 0
-        }
+        stockData: [
+          { stock: d1.stock, price: d1.price, rel_likes: l1 - l2 },
+          { stock: d2.stock, price: d2.price, rel_likes: l2 - l1 }
+        ]
       });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: 'Error en el servidor' });
     }
-  });
-};
+
+    const symbol = String(stock).toUpperCase();
+    const data = await getStockData(symbol);
+    if (likeFlag) likeStock(symbol, ipHash);
+    const likes = getLikes(symbol);
+    return res.json({ stockData: { stock: data.stock, price: data.price, likes } });
+  } catch (err) {
+    console.error('❌ Error en API:', err.message);
+    return res.json({ stockData: { error: 'external source error' } });
+  }
+});
+
+module.exports = router;
