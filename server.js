@@ -5,27 +5,24 @@ const helmet = require('helmet');
 const path = require('path');
 const cors = require('cors');
 
-const apiRoutes = require('./routes/api.js'); // Aquí conectas tus endpoints reales
+const apiRoutes = require('./routes/api.js');
 
 const app = express();
 
-// CORS habilitado para que FCC pueda hacer las pruebas
+// CORS (necesario para FCC tests)
 app.use(cors({ origin: '*' }));
 
-// Helmet CSP (seguridad mínima requerida por FCC)
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      useDefaults: false,
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'"]
-      }
-    }
-  })
-);
+// ✅ Forzar CSP exacta para FreeCodeCamp
+app.use((req, res, next) => {
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self'"
+  );
+  next();
+});
 
+// Helmet (solo otras protecciones, sin CSP)
+app.use(helmet({ contentSecurityPolicy: false }));
 
 // Deshabilitar X-Powered-By
 app.disable('x-powered-by');
@@ -33,7 +30,7 @@ app.disable('x-powered-by');
 // Archivos estáticos
 app.use('/public', express.static(path.join(process.cwd(), 'public')));
 
-// Ruta raíz (sirve el index.html de la carpeta views)
+// Ruta raíz (sirve index.html)
 app.get('/', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'views', 'index.html'));
 });
@@ -54,4 +51,5 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
-module.exports = app; // Necesario para los tests
+module.exports = app; // necesario para que funcionen los tests
+
